@@ -4,9 +4,8 @@ const fetch = require("node-fetch");
 const path = require("path");
 const fs = require("fs-extra");
 const args = require("yargs").argv;
-const batchSize = 100;
+const batchSize = 200;
 
-let results = [];
 let id = 10000;
 
 if(!args.dest){
@@ -19,6 +18,16 @@ if(!args.dest){
 
 const dest = path.resolve(args.dest);
 
+const ensureDir = async function(dir){
+
+    // When multi-threaded, this sometimes fails when the directory already exists
+    try{
+
+        await fs.ensureDir(dir);
+
+    }catch(err){}
+
+};
 
 const get = async function(){
 
@@ -104,7 +113,7 @@ const get = async function(){
 
                 if(!albumFileExists){
 
-                    await fs.ensureDir(albumFolder);
+                    await ensureDir(albumFolder);
                     await fs.writeFile(albumFile, JSON.stringify(album, null, 4));
 
                 }
@@ -117,7 +126,7 @@ const get = async function(){
 
                 if(!imageFileExists){
 
-                    await fs.ensureDir(imageFolder);
+                    await ensureDir(imageFolder);
 
                     const res = await fetch(artworkUrl);
 
@@ -161,7 +170,7 @@ const get = async function(){
 
         }
 
-        await fs.ensureDir(albumsFolder);
+        await ensureDir(albumsFolder);
         await fs.writeFile(albumsFile, JSON.stringify(albums, null, 4));
 
         return albums;
