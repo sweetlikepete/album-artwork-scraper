@@ -1,0 +1,1 @@
+# album-artwork-scraper
