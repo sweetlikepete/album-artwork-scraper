@@ -4,7 +4,7 @@ const fetch = require("node-fetch");
 const path = require("path");
 const fs = require("fs-extra");
 const args = require("yargs").argv;
-const batchSize = 200;
+const batchSize = 50;
 
 let id = 10000;
 
