@@ -4,9 +4,22 @@ const fetch = require("node-fetch");
 const path = require("path");
 const fs = require("fs-extra");
 const args = require("yargs").argv;
-const batchSize = 50;
+
+const dest = path.resolve(args.dest);
+const requestBatchSize = 100;
+const artistIdBatchSize = 10;
+const idFolder = dest;
+const idFile = path.join(idFolder, "id.json");
 
 let id = 10000;
+
+if(fs.existsSync(idFile)){
+
+    const rawId = fs.readFileSync(idFile);
+
+    id = JSON.parse(rawId).id;
+
+}
 
 if(!args.dest){
 
@@ -15,8 +28,6 @@ if(!args.dest){
     process.exit();
 
 }
-
-const dest = path.resolve(args.dest);
 
 const ensureDir = async function(dir){
 
@@ -31,74 +42,62 @@ const ensureDir = async function(dir){
 
 const get = async function(){
 
-    const promises = Array.apply(null, Array(batchSize)).map(async (val, index) => {
+    const promises = Array.apply(null, Array(requestBatchSize)).map(async (val, index) => {
+
+        const idArr = Array.apply(null, Array(artistIdBatchSize)).map((val, idIndex) => id + (index * artistIdBatchSize) + idIndex);
+        const idStr = idArr.join(",");
+        const idTag = `${ idArr[0] }-${ idArr[artistIdBatchSize - 1] }`
 
         let res = null;
         let body = null;
         let json = null;
-        let aid = id + index;
-
-        const albumsFolder = path.join(dest, `data/albums/${ String(aid).substring(0, 3) }`);
-        const albumsFile = path.join(albumsFolder, `${ aid }.json`);
-        const albumsFileExists = await fs.exists(albumsFile);
-
         let albums = [];
 
-        if(!albumsFileExists){
+        try{
+
+            res = await fetch(`https://itunes.apple.com/lookup?id=${ idStr }&entity=album`);
+
+        }catch(err){
+
+            console.error(`${ idTag }: Connection error`);
+
+        }
+
+        if(res){
 
             try{
 
-                res = await fetch(`https://itunes.apple.com/lookup?id=${ aid }&entity=album`);
+                body = await res.text();
 
             }catch(err){
 
-                console.error(`${ aid }: Connection error`);
+                console.error(`${ idTag }: Empty response`);
 
             }
 
-            if(res){
+        }
 
-                try{
+        if(body){
 
-                    body = await res.text();
+            try{
 
-                }catch(err){
+                json = JSON.parse(body);
 
-                    console.error(`${ aid }: Empty response`);
+            }catch(err){
 
-                }
-
-            }
-
-            if(body){
-
-                try{
-
-                    json = JSON.parse(body);
-
-                }catch(err){
-
-                    console.error(`${ aid }: JSON parse error`);
-
-                }
+                console.error(`${ idTag }: JSON parse error`);
 
             }
 
-            if(json){
+        }
 
-                if(json.results){
+        if(json){
 
-                    albums = json.results.filter((item) => item.wrapperType === "collection");
+            if(json.results){
 
-                }
+                albums = json.results.filter((item) => item.wrapperType === "collection");
 
             }
-
-        }else{
-
-            const rawAlbums = await fs.readFile(albumsFile);
-
-            albums = JSON.parse(rawAlbums);
 
         }
 
@@ -140,7 +139,7 @@ const get = async function(){
 
                         res.body.on("error", (err) => {
 
-                            console.error(`Download failed: ${ aid } - ${ cid }`);
+                            console.error(`${ idTag } - Download failed - ${ cid }`);
 
                             fileStream.close();
 
@@ -150,7 +149,7 @@ const get = async function(){
 
                         fileStream.on("finish", function() {
 
-                            console.log(`Downloaded artwork: ${ aid } - ${ cid }`);
+                            console.log(`${ idTag } - Downloaded artwork - ${ cid }`);
 
                             fileStream.close();
 
@@ -162,27 +161,37 @@ const get = async function(){
 
                 }else{
 
-                    console.log(`Already Downloaded artwork: ${ aid } - ${ cid }`);
+                    console.log(`${ idTag } - Already Downloaded artwork - ${ cid }`);
 
                 }
 
             }));
 
+        }else{
+
+            console.log(`${ idTag } - Nothing found`);
+
         }
-
-        await ensureDir(albumsFolder);
-        await fs.writeFile(albumsFile, JSON.stringify(albums, null, 4));
-
-        return albums;
 
     });
 
     await Promise.all(promises);
 
-    id += batchSize;
+    id += (requestBatchSize * artistIdBatchSize);
 
     get();
 
 }
 
 get();
+
+process.on("SIGINT", async () => {
+      
+    await ensureDir(idFolder);
+    await fs.writeFile(idFile, JSON.stringify({
+        id: id - (requestBatchSize * artistIdBatchSize)
+    }, null, 4));
+
+    process.exit();
+
+});
